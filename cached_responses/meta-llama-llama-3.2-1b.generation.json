@@ -1,0 +1,10 @@
+{
+  "model": "meta-llama/Llama-3.2-1B",
+  "prompt": "Because the manager retired the project",
+  "continuation": ", I have to do",
+  "full_text": "Because the manager retired the project, I have to do",
+  "max_new_tokens": 5,
+  "temperature": 0.0,
+  "top_p": 1.0,
+  "timestamp": "2026-02-03T17:14:16"
+}
