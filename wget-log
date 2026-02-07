@@ -1,0 +1,6 @@
+--2026-02-06 14:48:35--  https://claude.ai/oauth/authorize?code=true
+Resolving claude.ai (claude.ai)... 160.79.104.10, 2607:6bc0::10
+Connecting to claude.ai (claude.ai)|160.79.104.10|:443... connected.
+HTTP request sent, awaiting response... 403 Forbidden
+2026-02-06 14:48:36 ERROR 403: Forbidden.
+

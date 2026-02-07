@@ -17,6 +17,7 @@ from circuit_tracer import ReplacementModel, attribute  # noqa: E402
 from circuit_tracer.utils import create_graph_files  # noqa: E402
 from circuit_tracer.frontend.local_server import serve  # noqa: E402
 
+from codi_inference import codi_inference_with_tokens, _load_prj
 
 LLAMA_PLT_TRANSCODER_SET = "mntss/transcoder-Llama-3.2-1B"
 
@@ -27,9 +28,13 @@ SUPPORTED_MODELS = {
     "bcywinski/codi_llama1b-answer_only",
 }
 
+def _get_prj(model_name, model):
+    if "bcywinski" in model_name:
+        return _load_prj("./checkpoints/bcywinski/codi_llama1b-answer_only/prj.pt", None, model)
+    else:
+        raise ValueError(f"No known PRJ path for model {model_name}")
 
 def is_codi_model(name: str) -> bool:
-    return False
     lower = name.lower()
     return "codi" in lower
 
@@ -45,21 +50,15 @@ def slugify_model(model_name: str) -> str:
 
 def generate_continuation(
     prompt: str,
-    *,
-    model_name: str,
-    dtype: torch.dtype,
+    model: str,
+    tokenizer, 
     max_new_tokens: int,
     temperature: float,
     top_p: float,
 ) -> tuple[str, str]:
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
 
-    model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=dtype)
     model.to(device)
-    model.eval()
 
     inputs = tokenizer(prompt, return_tensors="pt")
     input_ids = inputs.input_ids.to(device)
@@ -84,36 +83,10 @@ def generate_continuation(
     return full_text, continuation
 
 
-def attribute_with_optional_codi_latent(
-    *,
-    prompt: str,
-    model: Any,
-    codi_latent: torch.Tensor | None,
-    codi_forward_mode: str,
-    codi_latent_key: str,
-    **attribute_kwargs,
-):
-    if codi_latent is None or not is_codi_model(model.model_name):
-        return attribute(prompt, model, **attribute_kwargs)
-
-    # Placeholder: circuit-tracer's attribution expects a standard forward pass.
-    # For CODI, we need to pass the latent from the previous step into each forward.
-    # This hook provides a place to implement that behavior in the next iteration.
-    print(
-        "[warning] CODI latent support is a placeholder. Using the standard forward pass. "
-        "Update this function to pass the latent into the model's forward method."
-    )
-
-    # TODO: Replace with a custom attribution routine that mirrors
-    # circuit_tracer.attribution.attribute_nnsight but uses
-    # prepare_codi_forward_inputs(...) when invoking tracer.invoke(...).
-    _ = prepare_codi_forward_inputs(model.ensure_tokenized(prompt), codi_latent, mode=codi_forward_mode, latent_key=codi_latent_key)
-    return attribute(prompt, model, **attribute_kwargs)
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Visualize circuits with circuit-tracer.")
-    parser.add_argument("--model", default="meta-llama/Llama-3.2-1B", help="HF model name")
+    parser.add_argument("--model_name", default="meta-llama/Llama-3.2-1B", help="HF model name")
+    parser.add_argument("--model", required=True, help="HF model name")
     parser.add_argument(
         "--transcoder-set",
         default=LLAMA_PLT_TRANSCODER_SET,
@@ -131,12 +104,11 @@ def main() -> None:
     parser.add_argument("--server", action="store_true", help="Start local visualization server")
     parser.add_argument("--port", type=int, default=8041)
     parser.add_argument("--max-new-tokens", type=int, default=5)
+    parser.add_argument("--num-latents", type=int, default=6, help="Number of CODI latents to use (if CODI model)")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite cached data")
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top-p", type=float, default=1.0)
     parser.add_argument("--codi-latent-path", default=None, help="Path to a torch file with CODI latent")
-    parser.add_argument("--codi-latent-key", default="latent")
-    parser.add_argument("--codi-forward-mode", default="kwargs", choices=["kwargs", "tuple"])
 
     args = parser.parse_args()
 
@@ -145,14 +117,14 @@ def main() -> None:
 
     dtype = default_dtype()
 
-    model = ReplacementModel.from_pretrained(
+    base_model = AutoModelForCausalLM.from_pretrained(
         args.model,
-        args.transcoder_set,
-        backend=args.backend,
-        dtype=dtype,
+        device_map="auto",
+        # torch_dtype=dtype,
     )
-
-
+    tokenizer = AutoTokenizer.from_pretrained(args.model)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
     slug = args.slug or slugify_model(args.model)
     graph_dir = Path(args.graph_dir) / slug
     graph_dir.mkdir(parents=True, exist_ok=True)
@@ -160,6 +132,7 @@ def main() -> None:
     if args.max_new_tokens == 0:
         attribution_prompt = args.prompt
     elif not is_codi_model(args.model):
+        base_model.to(dtype)
         cache_path = f"cached_responses/{slug}.generation.json"
         if cache_path.exists() and not args.overwrite:
             print(f"Loading cached generation from {slug}.generation.json")
@@ -169,7 +142,8 @@ def main() -> None:
         else:
             full_text, continuation = generate_continuation(
                 args.prompt,
-                model_name=args.model,
+                model=base_model,
+                tokenizer=tokenizer,
                 dtype=dtype,
                 max_new_tokens=args.max_new_tokens,
                 temperature=args.temperature,
@@ -193,14 +167,45 @@ def main() -> None:
                 )
         attribution_prompt = full_text
     else:
-        print("[warning] CODI generation uses latent outputs; skipping generation for now.")
-        attribution_prompt = args.prompt
+        
+        #!!! Mutates model in-place to add extra embeddings !!!
+        result, token_strings, string_check, string_text = codi_inference_with_tokens(
+            model=base_model,
+            tokenizer=tokenizer,
+            prompt=args.prompt,
+            max_new_tokens=args.max_new_tokens,
+            num_latent_iterations=args.num_latents,
+            greedy=True,
+            sot_token_id=tokenizer.convert_tokens_to_ids("<|bocot|>"),
+            eot_token_id=tokenizer.convert_tokens_to_ids("<|eocot|>"),
+            projection=_get_prj(args.model, base_model),
+        )
+        del result
+        print("Latent tokens:", " ".join(token_strings))
+        print("String sanity check ok:", string_check.ok)
+        print("String max abs diff:", string_check.max_abs_diff)
+        print("String sanity check text:")
+        print(string_text)
+        attribution_prompt = string_text
+
+        base_model.to(dtype)
+
+    model = ReplacementModel.from_pretrained(
+        args.model_name,
+        args.transcoder_set,
+        backend=args.backend,
+        hf_model=base_model
+        # dtype=dtype,
+    )
+    model.eval()
+    breakpoint()
 
     graph = attribute(
         prompt=attribution_prompt,
         model=model,
         max_n_logits=args.max_n_logits,
         batch_size=args.batch_size,
+        offload="disk"
     )
 
     if args.graph_output_pt:

@@ -1,3 +1,9 @@
 python codi_inference.py /nfshomes/sriramb/projects/neel-mats/codi-circuit/my_models/merged_bcywinski_codi_llama1b-answer_only "A team starts with 3 members. 2 members leave the team. Then each remaining member recruits 4 additional people. How many people are there now on the team? Give the answer only and nothing else." --max-new-tokens 256
 
-python visualize_llama_circuits.py  --model meta-llama/Llama-3.2-1B-Instruct  --prompt "Because the manager retired the project" --server --overwrite --max-new-tokens 
+answers: 6, 8(10), 12, 5
+
+python visualize_llama_circuits.py  --model meta-llama/Llama-3.2-1B-Instruct  --prompt "Because the manager retired the project" --server --overwrite --max-new-tokens 0
+
+python codi_inference.py /nfshomes/sriramb/projects/neel-mats/codi-circuit/my_models/merged_bcywinski_codi_llama1b-answer_only  --max-new-tokens 256  --prj-source-checkpoint ./checkpoints/bcywinski/codi_llama1b-answer_only/pytorch_model.bin --prj-path ./checkpoints/bcywinski/codi_llama1b-answer_only/prj.pt
+
+python visualize_llama_circuits.py  --model /nfshomes/sriramb/projects/neel-mats/codi-circuit/my_models/merged_bcywinski_codi_llama1b-answer_only --prompt "A team starts with 3 members. 2 members leave the team. Then each remaining member recruits 4 additional people. How many people are there now on the team? Give the answer only and nothing else." --max-new-tokens 256 --server --overwrite
