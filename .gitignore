@@ -2,4 +2,5 @@ checkpoints/
 circuit-tracer/
 codi-ao/
 graph_data/
-my_models
+my_models/
+venv/

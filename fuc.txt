@@ -7,3 +7,31 @@ python visualize_llama_circuits.py  --model meta-llama/Llama-3.2-1B-Instruct  --
 python codi_inference.py /nfshomes/sriramb/projects/neel-mats/codi-circuit/my_models/merged_bcywinski_codi_llama1b-answer_only  --max-new-tokens 256  --prj-source-checkpoint ./checkpoints/bcywinski/codi_llama1b-answer_only/pytorch_model.bin --prj-path ./checkpoints/bcywinski/codi_llama1b-answer_only/prj.pt
 
 python visualize_llama_circuits.py  --model /nfshomes/sriramb/projects/neel-mats/codi-circuit/my_models/merged_bcywinski_codi_llama1b-answer_only --prompt "A team starts with 3 members. 2 members leave the team. Then each remaining member recruits 4 additional people. How many people are there now on the team? Give the answer only and nothing else." --max-new-tokens 256 --server --overwrite
+
+python visualize_llama_circuits.py  --model /nfshomes/sriramb/projects/neel-mats/codi-circuit/my_models/merged_bcywinski_codi_llama1b-answer_only --prompt "A team starts with 3 members. 2 members leave the team. Then each remaining member recruits 4 additional people. How many people are there now on the team? Give the answer only and nothing else." --max-new-tokens 256 --server --overwrite --offload disk --batch-size 64 --backend transformerlens
+
+python visualize_llama_circuits.py  --model /workspace/codi-circuit/my_models/merged_bcywinski_codi_llama1b-answer_only --prompt "A team starts with 3 members. 2 members leave the team. Then each remaining member recruits 4 additional people. How many people are there now on the team? Give the answer only and nothing else." --max-new-tokens 256 --server --overwrite --offload disk --batch-size 64 --backend transformerlens --max-n-logits 2 --verbose
+
+
+ Hi, I am trying to run this command: python visualize_llama_circuits.py  --model
+  /workspace/codi-circuit/my_models/merged_bcywinski_codi_llama1b-answer_only --prompt "A team starts with 3    
+  members. 2 members leave the team. Then each remaining member recruits 4 additional people. How many people   
+  are there now on the team? Give the answer only and nothing else." --max-new-tokens 256 --server --overwrite
+  --offload disk --batch-size 64 --backend transformerlens --max-n-logits 2 --verbose
+
+  But this takes too much CPU RAM and crashes the node I am running it on. Can you analysze the code and
+  figure out how to reduce the memory consumption?
+
+  Tips:
+  - The memory consuming step is in the attribute() function, which is in turn calling the _run_attribution
+function in codi-circuit/circuit-tracer/circuit_tracer/attribution/attribute_transformerlens.py
+  - I have two strategies for reducing memory: (1) specify max_feature_nodes (--max_feature_nodes in the
+  visualize_llama_circuits.py script), or (2) use the --node-threshold and the --edge-threshold to modify
+  _run_attribution so that it returns a pruned graph (and not the full unpruned graph)
+  - The problem with (1) is compute_partial_influences doesn't converge, not sure if this is a bug or
+  something about my particular inputs. Try investigating why it doesn't converge.
+  - The problem with (2) is it is challenging to implement. Take a look and see if this is doable.
+  - Alternatively, if you have some other method which works, please try it out and report back!
+
+  If your solution involves editing circuit-tracer, give me a summary of the edits you are planning before
+  proceeding.

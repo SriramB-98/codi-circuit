@@ -108,7 +108,9 @@ def main() -> None:
     parser.add_argument("--overwrite", action="store_true", help="Overwrite cached data")
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top-p", type=float, default=1.0)
-    parser.add_argument("--codi-latent-path", default=None, help="Path to a torch file with CODI latent")
+    parser.add_argument("--offload", choices=["disk", "cpu", "none"], default="none", help="Offloading strategy for attribution")
+    parser.add_argument("--max-feature-nodes", type=int, default=None, help="Max feature nodes in graph")
+    parser.add_argument("--verbose", action="store_true", help="Verbose output during attribution")
 
     args = parser.parse_args()
 
@@ -198,14 +200,17 @@ def main() -> None:
         # dtype=dtype,
     )
     model.eval()
-    breakpoint()
+    model.tokenizer = tokenizer
+    # breakpoint()
 
     graph = attribute(
         prompt=attribution_prompt,
         model=model,
         max_n_logits=args.max_n_logits,
+        max_feature_nodes=args.max_feature_nodes,
         batch_size=args.batch_size,
-        offload="disk"
+        offload=args.offload,
+        verbose=args.verbose
     )
 
     if args.graph_output_pt:
